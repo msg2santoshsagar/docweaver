@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api/client';
-import type { AppConfig, DocumentGroup, GeneratedDocument, ImageAsset, OutputType } from './types';
+import type { AiStatus, AppConfig, DocumentGroup, GeneratedDocument, ImageAsset, OutputType } from './types';
 import { DropColumn } from './components/DropColumn';
 import { IconButton, MinusIcon, PlusIcon, ResetViewIcon, RotateLeftIcon, RotateRightIcon, TrashIcon } from './components/IconButton';
 import { ImageViewerModal } from './components/ImageViewerModal';
@@ -36,6 +36,8 @@ const chunk = <T,>(items: T[], size: number): T[][] => {
   return out;
 };
 
+const wait = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+
 const fileToBase64 = (file: File) =>
   new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -55,6 +57,7 @@ export default function App() {
   const [groups, setGroups] = useState<DocumentGroup[]>([]);
   const [history, setHistory] = useState<GeneratedDocument[]>([]);
   const [config, setConfig] = useState<AppConfig | null>(null);
+  const [aiStatus, setAiStatus] = useState<AiStatus | null>(null);
 
   const [selectedStandalone, setSelectedStandalone] = useState<Record<string, boolean>>({});
   const [deleteOriginals, setDeleteOriginals] = useState(false);
@@ -84,6 +87,7 @@ export default function App() {
 
   const [saving, setSaving] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [bootstrapped, setBootstrapped] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
 
@@ -203,24 +207,71 @@ export default function App() {
   const loadAll = async () => {
     setError('');
     try {
-      const [imageRows, groupRows, historyRows, configRow] = await Promise.all([
+      let configRow: AppConfig | null = null;
+      let configError: Error | null = null;
+      for (let attempt = 0; attempt < 8; attempt += 1) {
+        try {
+          configRow = await api.readConfig();
+          configError = null;
+          break;
+        } catch (e) {
+          configError = e as Error;
+          if (attempt < 7) {
+            await wait(500);
+          }
+        }
+      }
+      if (!configRow) {
+        throw (configError ?? new Error('Failed to load configuration.'));
+      }
+      setConfig(configRow);
+      setDeleteOriginals(configRow.defaultDeleteOriginals);
+
+      const [imageRows, groupRows, historyRows, aiStatusRow] = await Promise.allSettled([
         api.listImages(),
         api.listGroups(),
         api.listHistory(),
-        api.readConfig()
+        api.readAiStatus()
       ]);
-      setImages(imageRows);
-      setGroups(groupRows);
-      setHistory(historyRows);
-      setConfig(configRow);
-      setDeleteOriginals(configRow.defaultDeleteOriginals);
+
+      if (imageRows.status === 'fulfilled') {
+        setImages(imageRows.value);
+      } else {
+        setError((imageRows.reason as Error)?.message ?? 'Failed to load images.');
+      }
+
+      if (groupRows.status === 'fulfilled') {
+        setGroups(groupRows.value);
+      } else {
+        setError((groupRows.reason as Error)?.message ?? 'Failed to load groups.');
+      }
+
+      if (historyRows.status === 'fulfilled') {
+        setHistory(historyRows.value);
+      } else {
+        setError((historyRows.reason as Error)?.message ?? 'Failed to load history.');
+      }
+
+      if (aiStatusRow.status === 'fulfilled') {
+        setAiStatus(aiStatusRow.value);
+      } else {
+        setAiStatus(null);
+      }
     } catch (e) {
+      setConfig(null);
+      setAiStatus(null);
       setError((e as Error).message);
     }
   };
 
+  const initializeApp = async () => {
+    setBootstrapped(false);
+    await loadAll();
+    setBootstrapped(true);
+  };
+
   useEffect(() => {
-    void loadAll();
+    void initializeApp();
   }, []);
 
   const resetGroupEditor = () => {
@@ -260,6 +311,15 @@ export default function App() {
       let nameFailures = 0;
       for (const pair of pairs) {
         let targetName = pair.fallbackName;
+        let suggestionMeta: {
+          aiSuggestedName?: string;
+          aiDocType?: string;
+          aiSubject?: string;
+          aiDocumentDate?: string;
+          aiGroupKey?: string;
+          aiConfidence?: number;
+          autoApplied?: boolean;
+        } | undefined;
         try {
           const bytes = await fileToBase64(pair.file);
           const suggestion = await api.suggestName(
@@ -270,12 +330,21 @@ export default function App() {
             false
           );
           targetName = suggestion.suggestedName || targetName;
+          suggestionMeta = {
+            aiSuggestedName: suggestion.suggestedName || targetName,
+            aiDocType: suggestion.docType,
+            aiSubject: suggestion.subject,
+            aiDocumentDate: suggestion.documentDate,
+            aiGroupKey: suggestion.groupKey,
+            aiConfidence: suggestion.confidence,
+            autoApplied: true
+          };
         } catch {
           nameFailures += 1;
         }
 
         try {
-          await api.renameImage(pair.imageId, targetName);
+          await api.renameImage(pair.imageId, targetName, suggestionMeta);
         } catch {
           nameFailures += 1;
         }
@@ -330,6 +399,50 @@ export default function App() {
           ? `Removed ${poolIds.length} image(s) from pool.`
           : `Removed ${poolIds.length - failed} image(s), ${failed} failed.`
       );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const autoCategorizePool = async () => {
+    if (poolIds.length === 0) return;
+    setSaving(true);
+    setError('');
+    try {
+      const liveStatus = await api.readAiStatus();
+      setAiStatus(liveStatus);
+      if (!liveStatus.enabled) {
+        throw new Error('Local AI is disabled in Settings.');
+      }
+      if (!liveStatus.available) {
+        throw new Error(`Local AI unavailable: ${liveStatus.reason}`);
+      }
+
+      const result = await api.autoCategorize(poolIds);
+
+      const defaultAsPdf = config?.defaultStandaloneOutputType === 'PDF';
+      setSelectedStandalone((prev) => {
+        const next = { ...prev };
+        for (const id of result.standaloneImageIds) {
+          next[id] = next[id] ?? defaultAsPdf;
+        }
+        return next;
+      });
+
+      let createdGroups = 0;
+      for (const group of result.groups) {
+        if (group.imageIds.length < 2) continue;
+        await api.createGroup(group.name, group.imageIds);
+        createdGroups += 1;
+      }
+
+      resetGroupEditor();
+      await loadAll();
+      setMessage(
+        `Auto categorized ${result.standaloneImageIds.length} standalone, created ${createdGroups} group(s), renamed ${result.renamedImages.length} image(s).`
+      );
+    } catch (e) {
+      setError((e as Error).message);
     } finally {
       setSaving(false);
     }
@@ -582,6 +695,8 @@ export default function App() {
     try {
       const saved = await api.updateConfig(config);
       setConfig(saved);
+      const status = await api.readAiStatus().catch(() => null);
+      setAiStatus(status);
       setMessage('Settings saved');
     } catch (e) {
       setError((e as Error).message);
@@ -702,7 +817,25 @@ export default function App() {
     }
   };
 
-  if (!config) return <div className="p-10 text-text">Loading...</div>;
+  if (!bootstrapped && !config) return <div className="p-10 text-text">Loading...</div>;
+
+  if (bootstrapped && !config) {
+    return (
+      <div className="mx-auto mt-20 max-w-lg rounded-2xl border border-danger/40 bg-panel p-8 text-text shadow-card">
+        <h2 className="text-xl font-semibold">Unable to load DocWeaver</h2>
+        <p className="mt-2 text-sm text-muted">
+          Could not load application configuration from the backend. Check Docker logs, then retry.
+        </p>
+        {error && <p className="mt-3 rounded bg-danger/10 px-3 py-2 text-sm text-danger">{error}</p>}
+        <button
+          className="mt-5 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-bg"
+          onClick={() => void initializeApp()}
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-7xl px-4 pb-12 pt-8 text-text sm:px-8">
@@ -734,6 +867,14 @@ export default function App() {
         <div className="mb-4 flex items-center justify-between rounded-lg border border-success/40 bg-success/10 p-3 text-sm text-success">
           <span>{message}</span>
           <button className="ml-3 rounded px-2 py-1 text-success/90 hover:bg-success/20" onClick={() => setMessage('')}>✕</button>
+        </div>
+      )}
+      {config?.aiEnabled && aiStatus && !aiStatus.available && (
+        <div className="mb-4 rounded-lg border border-danger/40 bg-danger/10 p-3 text-sm text-danger">
+          Local AI unavailable: {aiStatus.reason}
+          <div className="mt-1 text-xs text-danger/90">
+            Model: {aiStatus.configuredModel || '(not set)'} | Endpoint: {aiStatus.endpoint}
+          </div>
         </div>
       )}
 
@@ -772,6 +913,13 @@ export default function App() {
                   <span>Pool: {poolIds.length}</span>
                   <span>Standalone: {standaloneIds.length}</span>
                   <span>Draft: {groupOrder.length}</span>
+                  <button
+                    className="inline-flex items-center gap-1 rounded-md border border-accent/35 bg-accent/10 px-2 py-1 font-medium text-accent hover:bg-accent/20 disabled:opacity-50"
+                    onClick={() => void autoCategorizePool()}
+                    disabled={poolIds.length === 0 || saving}
+                  >
+                    Auto Categorize
+                  </button>
                   <button
                     className="inline-flex items-center gap-1 rounded-md border border-danger/35 bg-transparent px-2 py-1 font-medium text-danger hover:bg-danger/10 disabled:opacity-50"
                     onClick={() => setConfirmRemoveAllPool(true)}
@@ -1041,6 +1189,40 @@ export default function App() {
               />
               Dry-run mode (validate only)
             </label>
+
+            <label className="flex items-center gap-2 text-sm text-muted">
+              <input
+                type="checkbox"
+                checked={config.aiEnabled}
+                onChange={(e) => setConfig({ ...config, aiEnabled: e.target.checked })}
+              />
+              Enable local AI suggestions
+            </label>
+
+            <label className="space-y-1 text-sm">
+              <span className="text-muted">AI model (Ollama)</span>
+              <input
+                className="w-full rounded-lg border border-panelSoft bg-panelSoft px-3 py-2"
+                value={config.aiModel}
+                onChange={(e) => setConfig({ ...config, aiModel: e.target.value })}
+              />
+            </label>
+
+            <label className="space-y-1 text-sm md:col-span-2">
+              <span className="text-muted">AI endpoint</span>
+              <input
+                className="w-full rounded-lg border border-panelSoft bg-panelSoft px-3 py-2"
+                value={config.aiBaseUrl}
+                onChange={(e) => setConfig({ ...config, aiBaseUrl: e.target.value })}
+              />
+            </label>
+
+            <div className="rounded-lg border border-panelSoft bg-panelSoft/60 p-3 text-sm md:col-span-2">
+              <div className="font-medium">AI status: {aiStatus?.available ? 'Ready' : 'Unavailable'}</div>
+              <div className="mt-1 text-xs text-muted">
+                {aiStatus?.reason ?? 'Status not loaded yet.'}
+              </div>
+            </div>
           </div>
 
           <button className="mt-5 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-bg" onClick={() => void saveConfig()}>

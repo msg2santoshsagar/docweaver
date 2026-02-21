@@ -6,6 +6,9 @@ public record AppConfigDto(
         String outputFolder,
         OutputType defaultStandaloneOutputType,
         boolean defaultDeleteOriginals,
-        boolean dryRun
+        boolean dryRun,
+        boolean aiEnabled,
+        String aiModel,
+        String aiBaseUrl
 ) {
 }

@@ -1,4 +1,14 @@
-import type { AppConfig, DocumentGroup, GeneratedDocument, ImageAsset, OutputType, ProcessResponse } from '../types';
+import type {
+  AiStatus,
+  AppConfig,
+  AutoCategorizeResponse,
+  DocumentGroup,
+  GeneratedDocument,
+  ImageAsset,
+  NameSuggestion,
+  OutputType,
+  ProcessResponse
+} from '../types';
 
 const jsonHeaders = { 'Content-Type': 'application/json' };
 
@@ -47,10 +57,22 @@ export const api = {
     }
     return (await res.json()) as { images: ImageAsset[] };
   },
-  renameImage: (imageId: string, displayName: string) => request<ImageAsset>(`/api/images/${imageId}/rename`, {
+  renameImage: (
+    imageId: string,
+    displayName: string,
+    aiMeta?: {
+      aiSuggestedName?: string;
+      aiDocType?: string;
+      aiSubject?: string;
+      aiDocumentDate?: string;
+      aiGroupKey?: string;
+      aiConfidence?: number;
+      autoApplied?: boolean;
+    }
+  ) => request<ImageAsset>(`/api/images/${imageId}/rename`, {
     method: 'PATCH',
     headers: jsonHeaders,
-    body: JSON.stringify({ displayName })
+    body: JSON.stringify({ displayName, ...aiMeta })
   }),
   deleteImage: (imageId: string) => request<void>(`/api/images/${imageId}`, {
     method: 'DELETE'
@@ -93,8 +115,14 @@ export const api = {
     headers: jsonHeaders,
     body: JSON.stringify({ standaloneItems, groupIds, deleteOriginals })
   }),
+  autoCategorize: (imageIds: string[]) => request<AutoCategorizeResponse>('/api/ai/auto-categorize', {
+    method: 'POST',
+    headers: jsonHeaders,
+    body: JSON.stringify({ imageIds })
+  }),
+  readAiStatus: () => request<AiStatus>('/api/ai/status'),
   suggestName: (fileName: string, mimeType: string, fileBytes: string, category: string, grouped: boolean) =>
-    request<{ suggestedName: string; confidence: number; source: string }>('/api/suggestions/name', {
+    request<NameSuggestion>('/api/suggestions/name', {
       method: 'POST',
       headers: jsonHeaders,
       body: JSON.stringify({ fileName, mimeType, fileBytes, context: { category, grouped } })

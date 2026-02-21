@@ -50,7 +50,7 @@ public class ImageController {
 
     @PatchMapping("/{imageId}/rename")
     public ImageAssetDto rename(@PathVariable UUID imageId, @Valid @org.springframework.web.bind.annotation.RequestBody RenameImageRequest request) {
-        return imageService.rename(imageId, request.displayName());
+        return imageService.rename(imageId, request);
     }
 
     @PatchMapping("/{imageId}/mode")

@@ -24,16 +24,36 @@ public class AppConfigService {
 
     @Transactional
     public AppConfig getOrCreate() {
-        return appConfigRepository.findById(AppConfig.SINGLETON_ID)
+        AppConfig config = appConfigRepository.findById(AppConfig.SINGLETON_ID)
                 .orElseGet(() -> {
-                    AppConfig config = new AppConfig();
-                    config.setId(AppConfig.SINGLETON_ID);
-                    config.setOutputFolder(storageProperties.outputDir());
-                    config.setDefaultStandaloneOutputType(OutputType.IMAGE);
-                    config.setDefaultDeleteOriginals(false);
-                    config.setDryRun(false);
-                    return appConfigRepository.save(config);
+                    AppConfig newConfig = new AppConfig();
+                    newConfig.setId(AppConfig.SINGLETON_ID);
+                    newConfig.setOutputFolder(storageProperties.outputDir());
+                    newConfig.setDefaultStandaloneOutputType(OutputType.IMAGE);
+                    newConfig.setDefaultDeleteOriginals(false);
+                    newConfig.setDryRun(false);
+                    newConfig.setAiEnabled(true);
+                    newConfig.setAiModel("qwen2.5vl:7b");
+                    newConfig.setAiBaseUrl("http://host.docker.internal:11434");
+                    return appConfigRepository.save(newConfig);
                 });
+        boolean changed = false;
+        if (config.getAiEnabled() == null) {
+            config.setAiEnabled(true);
+            changed = true;
+        }
+        if (config.getAiModel() == null || config.getAiModel().isBlank()) {
+            config.setAiModel("qwen2.5vl:7b");
+            changed = true;
+        }
+        if (config.getAiBaseUrl() == null || config.getAiBaseUrl().isBlank()) {
+            config.setAiBaseUrl("http://host.docker.internal:11434");
+            changed = true;
+        }
+        if (changed) {
+            return appConfigRepository.save(config);
+        }
+        return config;
     }
 
     @Transactional
@@ -58,6 +78,13 @@ public class AppConfigService {
         }
         config.setDefaultDeleteOriginals(request.defaultDeleteOriginals());
         config.setDryRun(request.dryRun());
+        config.setAiEnabled(request.aiEnabled());
+        if (request.aiModel() != null && !request.aiModel().isBlank()) {
+            config.setAiModel(request.aiModel().trim());
+        }
+        if (request.aiBaseUrl() != null && !request.aiBaseUrl().isBlank()) {
+            config.setAiBaseUrl(request.aiBaseUrl().trim());
+        }
         AppConfig saved = appConfigRepository.save(config);
         try {
             storageUtil.ensureFolder(saved.getOutputFolder());

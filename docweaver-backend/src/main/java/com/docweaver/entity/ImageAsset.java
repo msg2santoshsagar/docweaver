@@ -40,6 +40,18 @@ public class ImageAsset {
     @Column(nullable = false)
     private OffsetDateTime uploadedAt;
 
+    private String aiSuggestedName;
+
+    private String aiDocType;
+
+    private String aiSubject;
+
+    private String aiDocumentDate;
+
+    private String aiGroupKey;
+
+    private Double aiConfidence;
+
     @PrePersist
     void onCreate() {
         if (id == null) {
@@ -112,5 +124,53 @@ public class ImageAsset {
 
     public void setUploadedAt(OffsetDateTime uploadedAt) {
         this.uploadedAt = uploadedAt;
+    }
+
+    public String getAiSuggestedName() {
+        return aiSuggestedName;
+    }
+
+    public void setAiSuggestedName(String aiSuggestedName) {
+        this.aiSuggestedName = aiSuggestedName;
+    }
+
+    public String getAiDocType() {
+        return aiDocType;
+    }
+
+    public void setAiDocType(String aiDocType) {
+        this.aiDocType = aiDocType;
+    }
+
+    public String getAiSubject() {
+        return aiSubject;
+    }
+
+    public void setAiSubject(String aiSubject) {
+        this.aiSubject = aiSubject;
+    }
+
+    public String getAiDocumentDate() {
+        return aiDocumentDate;
+    }
+
+    public void setAiDocumentDate(String aiDocumentDate) {
+        this.aiDocumentDate = aiDocumentDate;
+    }
+
+    public String getAiGroupKey() {
+        return aiGroupKey;
+    }
+
+    public void setAiGroupKey(String aiGroupKey) {
+        this.aiGroupKey = aiGroupKey;
+    }
+
+    public Double getAiConfidence() {
+        return aiConfidence;
+    }
+
+    public void setAiConfidence(Double aiConfidence) {
+        this.aiConfidence = aiConfidence;
     }
 }

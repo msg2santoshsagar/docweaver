@@ -2,6 +2,7 @@ package com.docweaver.service;
 
 import com.docweaver.config.StorageProperties;
 import com.docweaver.dto.ImageAssetDto;
+import com.docweaver.dto.RenameImageRequest;
 import com.docweaver.entity.ImageAsset;
 import com.docweaver.entity.ImageMode;
 import com.docweaver.mapper.ImageAssetMapper;
@@ -32,6 +33,7 @@ public class ImageService {
     private final StorageProperties storageProperties;
     private final StorageUtil storageUtil;
     private final ImageAssetMapper imageAssetMapper;
+    private final NamePatternService namePatternService;
 
     @Transactional
     public List<ImageAssetDto> upload(List<MultipartFile> files) {
@@ -74,9 +76,39 @@ public class ImageService {
     }
 
     @Transactional
-    public ImageAssetDto rename(UUID imageId, String displayName) {
+    public ImageAssetDto rename(UUID imageId, RenameImageRequest request) {
         ImageAsset image = getEntity(imageId);
-        image.setDisplayName(displayName.trim());
+        String previousDisplayName = image.getDisplayName();
+        String newDisplayName = request.displayName().trim();
+        image.setDisplayName(newDisplayName);
+
+        if (request.aiSuggestedName() != null && !request.aiSuggestedName().isBlank()) {
+            image.setAiSuggestedName(request.aiSuggestedName().trim());
+        }
+        if (request.aiDocType() != null && !request.aiDocType().isBlank()) {
+            image.setAiDocType(request.aiDocType().trim());
+        }
+        if (request.aiSubject() != null && !request.aiSubject().isBlank()) {
+            image.setAiSubject(request.aiSubject().trim());
+        }
+        if (request.aiDocumentDate() != null && !request.aiDocumentDate().isBlank()) {
+            image.setAiDocumentDate(request.aiDocumentDate().trim());
+        }
+        if (request.aiGroupKey() != null && !request.aiGroupKey().isBlank()) {
+            image.setAiGroupKey(request.aiGroupKey().trim());
+        }
+        if (request.aiConfidence() != null) {
+            image.setAiConfidence(request.aiConfidence());
+        }
+
+        if (!Boolean.TRUE.equals(request.autoApplied())
+                && image.getAiSuggestedName() != null
+                && previousDisplayName != null
+                && previousDisplayName.equals(image.getAiSuggestedName())
+                && !newDisplayName.equals(previousDisplayName)) {
+            namePatternService.learnFromRename(image, newDisplayName);
+        }
+
         return toDto(imageAssetRepository.save(image));
     }
 

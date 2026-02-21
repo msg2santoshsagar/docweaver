@@ -26,6 +26,9 @@ export interface AppConfig {
   defaultStandaloneOutputType: OutputType;
   defaultDeleteOriginals: boolean;
   dryRun: boolean;
+  aiEnabled: boolean;
+  aiModel: string;
+  aiBaseUrl: string;
 }
 
 export interface GeneratedDocument {
@@ -59,4 +62,39 @@ export interface ProcessResponse {
   originalsDeleted: boolean;
   dryRun: boolean;
   results: ProcessResult[];
+}
+
+export interface NameSuggestion {
+  suggestedName: string;
+  confidence: number;
+  source: string;
+  docType?: string;
+  subject?: string;
+  documentDate?: string;
+  groupKey?: string;
+}
+
+export interface AiStatus {
+  enabled: boolean;
+  available: boolean;
+  configuredModel: string;
+  endpoint: string;
+  reason: string;
+  availableModels: string[];
+}
+
+export interface AutoCategorizeResponse {
+  standaloneImageIds: string[];
+  groups: {
+    name: string;
+    imageIds: string[];
+    reason: string;
+    confidence: number;
+  }[];
+  renamedImages: {
+    imageId: string;
+    previousName: string;
+    newName: string;
+    source: string;
+  }[];
 }

@@ -36,6 +36,15 @@ public class AppConfig {
     @Column(nullable = false)
     private Boolean dryRun;
 
+    @Column
+    private Boolean aiEnabled;
+
+    @Column
+    private String aiModel;
+
+    @Column
+    private String aiBaseUrl;
+
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "app_config_categories", joinColumns = @JoinColumn(name = "config_id"))
     @Column(name = "category", nullable = false)
@@ -79,6 +88,30 @@ public class AppConfig {
 
     public void setDryRun(Boolean dryRun) {
         this.dryRun = dryRun;
+    }
+
+    public Boolean getAiEnabled() {
+        return aiEnabled;
+    }
+
+    public void setAiEnabled(Boolean aiEnabled) {
+        this.aiEnabled = aiEnabled;
+    }
+
+    public String getAiModel() {
+        return aiModel;
+    }
+
+    public void setAiModel(String aiModel) {
+        this.aiModel = aiModel;
+    }
+
+    public String getAiBaseUrl() {
+        return aiBaseUrl;
+    }
+
+    public void setAiBaseUrl(String aiBaseUrl) {
+        this.aiBaseUrl = aiBaseUrl;
     }
 
     public List<String> getCategories() {
