@@ -32,11 +32,23 @@ public class PdfUtil {
                 int rotation = normalizeRotation(pageInput.rotationDegrees());
                 byte[] bytes = loadImageBytes(imagePath, rotation);
                 PDImageXObject image = PDImageXObject.createFromByteArray(document, bytes, imagePath.getFileName().toString());
-                PDRectangle pageSize = new PDRectangle(image.getWidth(), image.getHeight());
+                float imageWidth = image.getWidth();
+                float imageHeight = image.getHeight();
+                PDRectangle pageSize = new PDRectangle(imageWidth, imageHeight);
                 PDPage page = new PDPage(pageSize);
                 document.addPage(page);
+
+                float margin = computeMargin(imageWidth, imageHeight);
+                float availableWidth = Math.max(1f, pageSize.getWidth() - (margin * 2f));
+                float availableHeight = Math.max(1f, pageSize.getHeight() - (margin * 2f));
+                float scale = Math.min(availableWidth / imageWidth, availableHeight / imageHeight);
+                float drawWidth = imageWidth * scale;
+                float drawHeight = imageHeight * scale;
+                float drawX = (pageSize.getWidth() - drawWidth) / 2f;
+                float drawY = (pageSize.getHeight() - drawHeight) / 2f;
+
                 try (PDPageContentStream stream = new PDPageContentStream(document, page)) {
-                    stream.drawImage(image, 0, 0, image.getWidth(), image.getHeight());
+                    stream.drawImage(image, drawX, drawY, drawWidth, drawHeight);
                 }
             }
             document.save(outputPdf.toFile());
@@ -97,6 +109,12 @@ public class PdfUtil {
             normalized += 360;
         }
         return normalized;
+    }
+
+    private float computeMargin(float imageWidth, float imageHeight) {
+        float minDimension = Math.min(imageWidth, imageHeight);
+        float adaptive = minDimension * 0.04f;
+        return Math.max(8f, Math.min(36f, adaptive));
     }
 
     public record PageInput(Path imagePath, int rotationDegrees) {
