@@ -1,0 +1,28 @@
+server:
+  port: 8080
+
+spring:
+  datasource:
+    url: jdbc:postgresql://postgres:5432/docweaver
+    username: docweaver
+    password: docweaver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+  servlet:
+    multipart:
+      max-file-size: 25MB
+      max-request-size: 1024MB
+
+app:
+  storage:
+    uploads-dir: /app/data/uploads
+    output-dir: /app/data/output
+
+logging:
+  level:
+    org.hibernate.SQL: warn
