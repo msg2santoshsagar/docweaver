@@ -3,25 +3,24 @@ package com.docweaver.service;
 import com.docweaver.config.StorageProperties;
 import com.docweaver.dto.AppConfigDto;
 import com.docweaver.entity.AppConfig;
+import com.docweaver.mapper.AppConfigMapper;
 import com.docweaver.entity.OutputType;
 import com.docweaver.repository.AppConfigRepository;
 import com.docweaver.util.StorageUtil;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.IOException;
+
 @Service
+@RequiredArgsConstructor
 public class AppConfigService {
 
     private final AppConfigRepository appConfigRepository;
     private final StorageProperties storageProperties;
     private final StorageUtil storageUtil;
-
-    public AppConfigService(AppConfigRepository appConfigRepository, StorageProperties storageProperties, StorageUtil storageUtil) {
-        this.appConfigRepository = appConfigRepository;
-        this.storageProperties = storageProperties;
-        this.storageUtil = storageUtil;
-    }
+    private final AppConfigMapper appConfigMapper;
 
     @Transactional
     public AppConfig getOrCreate() {
@@ -69,11 +68,6 @@ public class AppConfigService {
     }
 
     public AppConfigDto toDto(AppConfig config) {
-        return new AppConfigDto(
-                config.getOutputFolder(),
-                config.getDefaultStandaloneOutputType(),
-                Boolean.TRUE.equals(config.getDefaultDeleteOriginals()),
-                Boolean.TRUE.equals(config.getDryRun())
-        );
+        return appConfigMapper.toDto(config);
     }
 }

@@ -19,6 +19,7 @@ import com.docweaver.repository.ImageAssetRepository;
 import com.docweaver.util.FilenameUtil;
 import com.docweaver.util.PdfUtil;
 import com.docweaver.util.StorageUtil;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -31,6 +32,7 @@ import java.util.List;
 import java.util.UUID;
 
 @Service
+@RequiredArgsConstructor
 public class ProcessingService {
 
     private final AppConfigService appConfigService;
@@ -42,26 +44,6 @@ public class ProcessingService {
     private final DocumentGroupRepository documentGroupRepository;
     private final StorageUtil storageUtil;
     private final PdfUtil pdfUtil;
-
-    public ProcessingService(AppConfigService appConfigService,
-                             ImageService imageService,
-                             DocumentGroupService documentGroupService,
-                             GeneratedDocumentRepository generatedDocumentRepository,
-                             ImageAssetRepository imageAssetRepository,
-                             DocumentImageRepository documentImageRepository,
-                             DocumentGroupRepository documentGroupRepository,
-                             StorageUtil storageUtil,
-                             PdfUtil pdfUtil) {
-        this.appConfigService = appConfigService;
-        this.imageService = imageService;
-        this.documentGroupService = documentGroupService;
-        this.generatedDocumentRepository = generatedDocumentRepository;
-        this.imageAssetRepository = imageAssetRepository;
-        this.documentImageRepository = documentImageRepository;
-        this.documentGroupRepository = documentGroupRepository;
-        this.storageUtil = storageUtil;
-        this.pdfUtil = pdfUtil;
-    }
 
     @Transactional
     public ProcessResponse process(ProcessRequest request) {

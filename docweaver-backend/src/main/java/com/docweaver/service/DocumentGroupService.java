@@ -5,8 +5,11 @@ import com.docweaver.entity.DocumentGroup;
 import com.docweaver.entity.DocumentImage;
 import com.docweaver.entity.ImageAsset;
 import com.docweaver.entity.ImageMode;
+import com.docweaver.mapper.DocumentGroupMapper;
+import com.docweaver.mapper.ImageAssetMapper;
 import com.docweaver.repository.DocumentGroupRepository;
 import com.docweaver.repository.DocumentImageRepository;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,19 +23,14 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Service
+@RequiredArgsConstructor
 public class DocumentGroupService {
 
     private final DocumentGroupRepository documentGroupRepository;
     private final DocumentImageRepository documentImageRepository;
     private final ImageService imageService;
-
-    public DocumentGroupService(DocumentGroupRepository documentGroupRepository,
-                                DocumentImageRepository documentImageRepository,
-                                ImageService imageService) {
-        this.documentGroupRepository = documentGroupRepository;
-        this.documentImageRepository = documentImageRepository;
-        this.imageService = imageService;
-    }
+    private final ImageAssetMapper imageAssetMapper;
+    private final DocumentGroupMapper documentGroupMapper;
 
     @Transactional
     public DocumentGroupDto create(String name, List<UUID> imageIds) {
@@ -154,13 +152,10 @@ public class DocumentGroupService {
         List<ImageAsset> images = entries.stream().map(DocumentImage::getImageAsset).toList();
         Map<UUID, Integer> rotationByImageId = entries.stream()
                 .collect(Collectors.toMap(entry -> entry.getImageAsset().getId(), entry -> normalizeRotation(entry.getRotationDegrees())));
-        return new DocumentGroupDto(
-                group.getId(),
-                group.getName(),
-                images.stream().map(imageService::toDto).toList(),
-                rotationByImageId,
-                group.getCreatedAt(),
-                group.getUpdatedAt()
+        return documentGroupMapper.toDto(
+                group,
+                images.stream().map(imageAssetMapper::toDto).toList(),
+                rotationByImageId
         );
     }
 

@@ -4,10 +4,12 @@ import com.docweaver.config.StorageProperties;
 import com.docweaver.dto.ImageAssetDto;
 import com.docweaver.entity.ImageAsset;
 import com.docweaver.entity.ImageMode;
+import com.docweaver.mapper.ImageAssetMapper;
 import com.docweaver.repository.DocumentImageRepository;
 import com.docweaver.repository.ImageAssetRepository;
 import com.docweaver.util.FilenameUtil;
 import com.docweaver.util.StorageUtil;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,21 +24,14 @@ import java.util.List;
 import java.util.UUID;
 
 @Service
+@RequiredArgsConstructor
 public class ImageService {
 
     private final ImageAssetRepository imageAssetRepository;
     private final DocumentImageRepository documentImageRepository;
     private final StorageProperties storageProperties;
     private final StorageUtil storageUtil;
-
-    public ImageService(ImageAssetRepository imageAssetRepository,
-                        DocumentImageRepository documentImageRepository,
-                        StorageProperties storageProperties, StorageUtil storageUtil) {
-        this.imageAssetRepository = imageAssetRepository;
-        this.documentImageRepository = documentImageRepository;
-        this.storageProperties = storageProperties;
-        this.storageUtil = storageUtil;
-    }
+    private final ImageAssetMapper imageAssetMapper;
 
     @Transactional
     public List<ImageAssetDto> upload(List<MultipartFile> files) {
@@ -118,15 +113,6 @@ public class ImageService {
     }
 
     public ImageAssetDto toDto(ImageAsset image) {
-        return new ImageAssetDto(
-                image.getId(),
-                image.getOriginalFileName(),
-                image.getDisplayName(),
-                image.getMimeType(),
-                image.getOriginalPath(),
-                image.getFileSize(),
-                image.getMode(),
-                image.getUploadedAt()
-        );
+        return imageAssetMapper.toDto(image);
     }
 }

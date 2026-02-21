@@ -4,14 +4,16 @@ import com.docweaver.dto.ImageAssetDto;
 import com.docweaver.dto.RenameImageRequest;
 import com.docweaver.dto.UpdateImageModeRequest;
 import com.docweaver.dto.UploadResponse;
+import com.docweaver.entity.ImageAsset;
 import com.docweaver.service.ImageService;
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -25,13 +27,10 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/images")
+@RequiredArgsConstructor
 public class ImageController {
 
     private final ImageService imageService;
-
-    public ImageController(ImageService imageService) {
-        this.imageService = imageService;
-    }
 
     @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public UploadResponse upload(@RequestPart("files") List<MultipartFile> files) {
@@ -61,10 +60,10 @@ public class ImageController {
 
     @GetMapping("/{imageId}/preview")
     public ResponseEntity<byte[]> preview(@PathVariable UUID imageId) {
-        ImageAssetDto image = imageService.toDto(imageService.getEntity(imageId));
+        ImageAsset image = imageService.getEntity(imageId);
         byte[] bytes = imageService.loadImageBytes(imageId);
         return ResponseEntity.status(HttpStatus.OK)
-                .header(HttpHeaders.CONTENT_TYPE, image.mimeType())
+                .header(HttpHeaders.CONTENT_TYPE, image.getMimeType())
                 .body(bytes);
     }
 }

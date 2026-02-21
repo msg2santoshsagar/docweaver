@@ -6,12 +6,13 @@ import com.docweaver.dto.ReorderGroupRequest;
 import com.docweaver.dto.UpdatePageRotationRequest;
 import com.docweaver.service.DocumentGroupService;
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
-import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -21,13 +22,10 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/groups")
+@RequiredArgsConstructor
 public class DocumentGroupController {
 
     private final DocumentGroupService documentGroupService;
-
-    public DocumentGroupController(DocumentGroupService documentGroupService) {
-        this.documentGroupService = documentGroupService;
-    }
 
     @PostMapping
     public DocumentGroupDto create(@Valid @RequestBody DocumentGroupRequest request) {
