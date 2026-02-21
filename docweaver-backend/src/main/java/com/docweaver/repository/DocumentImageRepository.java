@@ -12,5 +12,7 @@ public interface DocumentImageRepository extends JpaRepository<DocumentImage, Lo
 
     List<DocumentImage> findByImageAsset_Id(UUID imageId);
 
+    boolean existsByDocumentGroup(DocumentGroup group);
+
     void deleteByDocumentGroup(DocumentGroup group);
 }

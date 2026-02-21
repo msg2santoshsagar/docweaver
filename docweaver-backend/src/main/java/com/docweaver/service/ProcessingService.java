@@ -12,7 +12,10 @@ import com.docweaver.entity.GeneratedType;
 import com.docweaver.entity.ImageAsset;
 import com.docweaver.entity.OutputType;
 import com.docweaver.entity.ProcessingStatus;
+import com.docweaver.repository.DocumentGroupRepository;
+import com.docweaver.repository.DocumentImageRepository;
 import com.docweaver.repository.GeneratedDocumentRepository;
+import com.docweaver.repository.ImageAssetRepository;
 import com.docweaver.util.FilenameUtil;
 import com.docweaver.util.PdfUtil;
 import com.docweaver.util.StorageUtil;
@@ -23,6 +26,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.UUID;
 
@@ -33,6 +37,9 @@ public class ProcessingService {
     private final ImageService imageService;
     private final DocumentGroupService documentGroupService;
     private final GeneratedDocumentRepository generatedDocumentRepository;
+    private final ImageAssetRepository imageAssetRepository;
+    private final DocumentImageRepository documentImageRepository;
+    private final DocumentGroupRepository documentGroupRepository;
     private final StorageUtil storageUtil;
     private final PdfUtil pdfUtil;
 
@@ -40,12 +47,18 @@ public class ProcessingService {
                              ImageService imageService,
                              DocumentGroupService documentGroupService,
                              GeneratedDocumentRepository generatedDocumentRepository,
+                             ImageAssetRepository imageAssetRepository,
+                             DocumentImageRepository documentImageRepository,
+                             DocumentGroupRepository documentGroupRepository,
                              StorageUtil storageUtil,
                              PdfUtil pdfUtil) {
         this.appConfigService = appConfigService;
         this.imageService = imageService;
         this.documentGroupService = documentGroupService;
         this.generatedDocumentRepository = generatedDocumentRepository;
+        this.imageAssetRepository = imageAssetRepository;
+        this.documentImageRepository = documentImageRepository;
+        this.documentGroupRepository = documentGroupRepository;
         this.storageUtil = storageUtil;
         this.pdfUtil = pdfUtil;
     }
@@ -91,9 +104,12 @@ public class ProcessingService {
 
         boolean originalsDeleted = false;
         if (deleteOriginals && overallSuccess && !dryRun) {
-            originalsDeleted = deleteOriginalFiles(originalsToDelete);
+            List<Path> uniquePaths = new ArrayList<>(new LinkedHashSet<>(originalsToDelete));
+            originalsDeleted = deleteOriginalFiles(uniquePaths);
             if (!originalsDeleted) {
                 overallSuccess = false;
+            } else {
+                removeDeletedOriginalsFromWorkspace(uniquePaths);
             }
         }
 
@@ -155,6 +171,12 @@ public class ProcessingService {
                     null
             );
         } catch (Exception ex) {
+            String failureMessage = "Failed: " + ex.getMessage();
+            if (isSourceMissing(image)) {
+                removeStaleStandaloneImage(image);
+                failureMessage = "Failed: original file is missing from uploads. Stale entry removed from workspace.";
+            }
+
             GeneratedDocument doc = new GeneratedDocument();
             doc.setType(outputType == OutputType.PDF ? GeneratedType.STANDALONE_PDF : GeneratedType.STANDALONE_IMAGE);
             doc.setSourceImageId(image.getId());
@@ -163,7 +185,7 @@ public class ProcessingService {
             doc.setDeleteOriginals(deleteOriginals);
             doc.setDryRun(dryRun);
             doc.setStatus(ProcessingStatus.FAILED);
-            doc.setMessage("Failed: " + ex.getMessage());
+            doc.setMessage(failureMessage);
             GeneratedDocument saved = generatedDocumentRepository.save(doc);
             return new ResultWithOriginal(
                     new ProcessResultItemDto(saved.getId(), saved.getType(), saved.getSourceImageId(), null,
@@ -245,6 +267,49 @@ public class ProcessingService {
         } catch (IOException ex) {
             return false;
         }
+    }
+
+    private void removeDeletedOriginalsFromWorkspace(List<Path> deletedOriginals) {
+        if (deletedOriginals.isEmpty()) {
+            return;
+        }
+
+        List<String> deletedPaths = deletedOriginals.stream()
+                .map(Path::toString)
+                .toList();
+        List<ImageAsset> deletedAssets = imageAssetRepository.findByOriginalPathIn(deletedPaths);
+        if (deletedAssets.isEmpty()) {
+            return;
+        }
+
+        for (ImageAsset asset : deletedAssets) {
+            List<DocumentImage> links = documentImageRepository.findByImageAsset_Id(asset.getId());
+            if (!links.isEmpty()) {
+                documentImageRepository.deleteAll(links);
+            }
+        }
+        imageAssetRepository.deleteAll(deletedAssets);
+
+        for (DocumentGroup group : documentGroupRepository.findAll()) {
+            if (!documentImageRepository.existsByDocumentGroup(group)) {
+                documentGroupRepository.delete(group);
+            }
+        }
+    }
+
+    private boolean isSourceMissing(ImageAsset image) {
+        try {
+            return !Files.exists(Path.of(image.getOriginalPath()));
+        } catch (Exception ignored) {
+            return true;
+        }
+    }
+
+    private void removeStaleStandaloneImage(ImageAsset image) {
+        if (!documentImageRepository.findByImageAsset_Id(image.getId()).isEmpty()) {
+            return;
+        }
+        imageAssetRepository.delete(image);
     }
 
     private record ResultWithOriginal(ProcessResultItemDto result, Path originalPath, List<Path> groupOriginals) {
