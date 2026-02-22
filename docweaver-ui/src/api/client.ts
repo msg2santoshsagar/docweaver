@@ -1,4 +1,4 @@
-import type { AppConfig, DocumentGroup, GeneratedDocument, ImageAsset, OutputType, ProcessResponse } from '../types';
+import type { AppConfig, DocumentGroup, HistoryPage, ImageAsset, OutputType, ProcessResponse } from '../types';
 
 const jsonHeaders = { 'Content-Type': 'application/json' };
 
@@ -27,7 +27,22 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   listImages: () => request<ImageAsset[]>('/api/images'),
   listGroups: () => request<DocumentGroup[]>('/api/groups'),
-  listHistory: () => request<GeneratedDocument[]>('/api/history'),
+  listHistory: (params?: {
+    page?: number;
+    size?: number;
+    status?: 'SUCCESS' | 'FAILED';
+    type?: 'STANDALONE_IMAGE' | 'STANDALONE_PDF' | 'GROUP_PDF';
+    query?: string;
+  }) => {
+    const query = new URLSearchParams();
+    if (params?.page !== undefined) query.set('page', String(params.page));
+    if (params?.size !== undefined) query.set('size', String(params.size));
+    if (params?.status) query.set('status', params.status);
+    if (params?.type) query.set('type', params.type);
+    if (params?.query && params.query.trim()) query.set('query', params.query.trim());
+    const suffix = query.toString();
+    return request<HistoryPage>(`/api/history${suffix ? `?${suffix}` : ''}`);
+  },
   readConfig: () => request<AppConfig>('/api/config'),
   updateConfig: (config: AppConfig) => request<AppConfig>('/api/config', {
     method: 'PUT',

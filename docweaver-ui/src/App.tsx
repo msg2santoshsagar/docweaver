@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api/client';
-import type { AppConfig, DocumentGroup, GeneratedDocument, ImageAsset, OutputType } from './types';
+import type { AppConfig, DocumentGroup, GeneratedDocument, HistoryPage, ImageAsset, OutputType } from './types';
 import { DropColumn } from './components/DropColumn';
 import { IconButton, MinusIcon, PlusIcon, ResetViewIcon, RotateLeftIcon, RotateRightIcon, TrashIcon } from './components/IconButton';
 import { ImageViewerModal } from './components/ImageViewerModal';
@@ -12,8 +12,11 @@ type PdfSource =
   | { kind: 'draft' }
   | { kind: 'saved'; groupId: string };
 type ProcessStatus = 'idle' | 'running' | 'success' | 'failed';
+type HistoryStatusFilter = 'ALL' | 'SUCCESS' | 'FAILED';
+type HistoryTypeFilter = 'ALL' | 'STANDALONE_IMAGE' | 'STANDALONE_PDF' | 'GROUP_PDF';
 
 const UPLOAD_CHUNK_SIZE = 5;
+const HISTORY_DEFAULT_PAGE_SIZE = 25;
 
 const normalizeRotation = (rotationDegrees: number) => {
   const normalized = rotationDegrees % 360;
@@ -55,7 +58,14 @@ export default function App() {
   const [tab, setTab] = useState<Tab>('workspace');
   const [images, setImages] = useState<ImageAsset[]>([]);
   const [groups, setGroups] = useState<DocumentGroup[]>([]);
-  const [history, setHistory] = useState<GeneratedDocument[]>([]);
+  const [historyPage, setHistoryPage] = useState<HistoryPage | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyPageIndex, setHistoryPageIndex] = useState(0);
+  const [historyPageSize, setHistoryPageSize] = useState(HISTORY_DEFAULT_PAGE_SIZE);
+  const [historyStatusFilter, setHistoryStatusFilter] = useState<HistoryStatusFilter>('ALL');
+  const [historyTypeFilter, setHistoryTypeFilter] = useState<HistoryTypeFilter>('ALL');
+  const [historyQueryInput, setHistoryQueryInput] = useState('');
+  const [historyQueryFilter, setHistoryQueryFilter] = useState('');
   const [config, setConfig] = useState<AppConfig | null>(null);
 
   const [selectedStandalone, setSelectedStandalone] = useState<Record<string, boolean>>({});
@@ -226,10 +236,9 @@ export default function App() {
       setConfig(configRow);
       setDeleteOriginals(configRow.defaultDeleteOriginals);
 
-      const [imageRows, groupRows, historyRows] = await Promise.allSettled([
+      const [imageRows, groupRows] = await Promise.allSettled([
         api.listImages(),
-        api.listGroups(),
-        api.listHistory()
+        api.listGroups()
       ]);
 
       if (imageRows.status === 'fulfilled') {
@@ -243,15 +252,42 @@ export default function App() {
       } else {
         setError((groupRows.reason as Error)?.message ?? 'Failed to load groups.');
       }
-
-      if (historyRows.status === 'fulfilled') {
-        setHistory(historyRows.value);
-      } else {
-        setError((historyRows.reason as Error)?.message ?? 'Failed to load history.');
-      }
     } catch (e) {
       setConfig(null);
       setError((e as Error).message);
+    }
+  };
+
+  const loadHistory = async (
+    page = historyPageIndex,
+    size = historyPageSize,
+    status = historyStatusFilter,
+    type = historyTypeFilter,
+    query = historyQueryFilter
+  ) => {
+    setHistoryLoading(true);
+    try {
+      const response = await api.listHistory({
+        page,
+        size,
+        status: status === 'ALL' ? undefined : status,
+        type: type === 'ALL' ? undefined : type,
+        query: query || undefined
+      });
+      setHistoryPage(response);
+    } catch (e) {
+      setError((e as Error).message ?? 'Failed to load history.');
+      setHistoryPage({
+        items: [],
+        page: 0,
+        size,
+        totalElements: 0,
+        totalPages: 0,
+        hasNext: false,
+        hasPrevious: false
+      });
+    } finally {
+      setHistoryLoading(false);
     }
   };
 
@@ -264,6 +300,11 @@ export default function App() {
   useEffect(() => {
     void initializeApp();
   }, []);
+
+  useEffect(() => {
+    if (tab !== 'history') return;
+    void loadHistory(historyPageIndex, historyPageSize, historyStatusFilter, historyTypeFilter, historyQueryFilter);
+  }, [tab, historyPageIndex, historyPageSize, historyStatusFilter, historyTypeFilter, historyQueryFilter]);
 
   const resetGroupEditor = () => {
     setGroupEditorId('');
@@ -762,6 +803,24 @@ export default function App() {
     }
   };
 
+  const applyHistoryFilters = () => {
+    setHistoryPageIndex(0);
+    setHistoryQueryFilter(historyQueryInput.trim());
+  };
+
+  const resetHistoryFilters = () => {
+    setHistoryStatusFilter('ALL');
+    setHistoryTypeFilter('ALL');
+    setHistoryQueryInput('');
+    setHistoryQueryFilter('');
+    setHistoryPageIndex(0);
+    setHistoryPageSize(HISTORY_DEFAULT_PAGE_SIZE);
+  };
+
+  const historyRows: GeneratedDocument[] = historyPage?.items ?? [];
+  const historyTotalPages = Math.max(1, historyPage?.totalPages ?? 0);
+  const historyCurrentPage = (historyPage?.page ?? historyPageIndex) + 1;
+
   if (!bootstrapped && !config) return <div className="p-10 text-text">Loading...</div>;
 
   if (bootstrapped && !config) {
@@ -1042,37 +1101,147 @@ export default function App() {
       )}
 
       {tab === 'history' && (
-        <section className="rounded-2xl bg-panel p-5 shadow-card">
-          <h2 className="mb-3 text-lg font-medium">Processing History</h2>
-          <div className="overflow-auto">
+        <section className="flex min-h-[60vh] max-h-[calc(100vh-8rem)] flex-col overflow-hidden rounded-2xl bg-panel p-5 shadow-card">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-lg font-medium">Processing History</h2>
+            <div className="text-xs text-muted">
+              {historyLoading
+                ? 'Loading history...'
+                : `Showing ${historyRows.length} of ${historyPage?.totalElements ?? 0}`}
+            </div>
+          </div>
+
+          <div className="mb-4 space-y-3 rounded-xl border border-panelSoft bg-panelSoft/40 p-3">
+            <div className="grid gap-3 md:grid-cols-[180px_210px_1fr_140px_auto]">
+              <div className="relative">
+                <select
+                  className="w-full appearance-none rounded-xl border border-panelSoft bg-panel px-3 py-2.5 pr-8 text-sm text-text shadow-card focus:border-accent focus:outline-none"
+                  value={historyStatusFilter}
+                  onChange={(e) => {
+                    setHistoryStatusFilter(e.target.value as HistoryStatusFilter);
+                    setHistoryPageIndex(0);
+                  }}
+                >
+                  <option value="ALL">All Statuses</option>
+                  <option value="SUCCESS">SUCCESS</option>
+                  <option value="FAILED">FAILED</option>
+                </select>
+                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted">▼</span>
+              </div>
+
+              <div className="relative">
+                <select
+                  className="w-full appearance-none rounded-xl border border-panelSoft bg-panel px-3 py-2.5 pr-8 text-sm text-text shadow-card focus:border-accent focus:outline-none"
+                  value={historyTypeFilter}
+                  onChange={(e) => {
+                    setHistoryTypeFilter(e.target.value as HistoryTypeFilter);
+                    setHistoryPageIndex(0);
+                  }}
+                >
+                  <option value="ALL">All Types</option>
+                  <option value="STANDALONE_IMAGE">Standalone IMAGE</option>
+                  <option value="STANDALONE_PDF">Standalone PDF</option>
+                  <option value="GROUP_PDF">Group PDF</option>
+                </select>
+                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted">▼</span>
+              </div>
+
+              <input
+                className="rounded-xl border border-panelSoft bg-panel px-3 py-2.5 text-sm shadow-card focus:border-accent focus:outline-none"
+                placeholder="Search output name/path/message"
+                value={historyQueryInput}
+                onChange={(e) => setHistoryQueryInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    applyHistoryFilters();
+                  }
+                }}
+              />
+
+              <div className="relative">
+                <select
+                  className="w-full appearance-none rounded-xl border border-panelSoft bg-panel px-3 py-2.5 pr-8 text-sm text-text shadow-card focus:border-accent focus:outline-none"
+                  value={historyPageSize}
+                  onChange={(e) => {
+                    const nextSize = Number(e.target.value);
+                    setHistoryPageSize(nextSize);
+                    setHistoryPageIndex(0);
+                  }}
+                >
+                  <option value={25}>25 / page</option>
+                  <option value={50}>50 / page</option>
+                  <option value={100}>100 / page</option>
+                </select>
+                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted">▼</span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button className="rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-bg" onClick={applyHistoryFilters}>
+                  Apply
+                </button>
+                <button className="rounded-lg bg-panel px-3 py-2 text-sm" onClick={resetHistoryFilters}>
+                  Reset
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-panelSoft">
             <table className="min-w-full text-left text-sm">
               <thead>
                 <tr className="text-muted">
-                  <th className="pb-2">Status</th>
-                  <th className="pb-2">Type</th>
-                  <th className="pb-2">Output</th>
-                  <th className="pb-2">Flags</th>
-                  <th className="pb-2">Time</th>
+                  <th className="sticky top-0 bg-panel px-3 py-2">Status</th>
+                  <th className="sticky top-0 bg-panel px-3 py-2">Type</th>
+                  <th className="sticky top-0 bg-panel px-3 py-2">Output</th>
+                  <th className="sticky top-0 bg-panel px-3 py-2">Flags</th>
+                  <th className="sticky top-0 bg-panel px-3 py-2">Time</th>
                 </tr>
               </thead>
               <tbody>
-                {history.map((row) => (
+                {historyRows.map((row) => (
                   <tr key={row.id} className="border-t border-panelSoft">
-                    <td className={`py-2 ${row.status === 'SUCCESS' ? 'text-success' : 'text-danger'}`}>{row.status}</td>
-                    <td className="py-2">{row.type}</td>
-                    <td className="py-2">
+                    <td className={`px-3 py-2 ${row.status === 'SUCCESS' ? 'text-success' : 'text-danger'}`}>{row.status}</td>
+                    <td className="px-3 py-2">{row.type}</td>
+                    <td className="px-3 py-2">
                       <div>{row.outputName}</div>
                       <div className="text-xs text-muted">{row.outputPath}</div>
                       <div className="text-xs text-muted">{row.message}</div>
                     </td>
-                    <td className="py-2 text-xs text-muted">
+                    <td className="px-3 py-2 text-xs text-muted">
                       delete: {row.deleteOriginals ? 'yes' : 'no'}<br />dry-run: {row.dryRun ? 'yes' : 'no'}
                     </td>
-                    <td className="py-2 text-xs text-muted">{new Date(row.createdAt).toLocaleString()}</td>
+                    <td className="px-3 py-2 text-xs text-muted">{new Date(row.createdAt).toLocaleString()}</td>
                   </tr>
                 ))}
+                {!historyLoading && historyRows.length === 0 && (
+                  <tr>
+                    <td className="px-3 py-6 text-sm text-muted" colSpan={5}>No history matches the current filters.</td>
+                  </tr>
+                )}
               </tbody>
             </table>
+          </div>
+
+          <div className="mt-3 flex items-center justify-between gap-3 border-t border-panelSoft pt-3 text-sm">
+            <div className="text-muted">
+              Page {historyCurrentPage} of {historyTotalPages}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                className="rounded-lg bg-panelSoft px-3 py-2 disabled:opacity-40"
+                disabled={historyLoading || historyPageIndex <= 0}
+                onClick={() => setHistoryPageIndex((prev) => Math.max(0, prev - 1))}
+              >
+                Previous
+              </button>
+              <button
+                className="rounded-lg bg-panelSoft px-3 py-2 disabled:opacity-40"
+                disabled={historyLoading || !(historyPage?.hasNext ?? false)}
+                onClick={() => setHistoryPageIndex((prev) => prev + 1)}
+              >
+                Next
+              </button>
+            </div>
           </div>
         </section>
       )}

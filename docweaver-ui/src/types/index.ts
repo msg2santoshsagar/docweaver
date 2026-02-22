@@ -31,7 +31,7 @@ export interface AppConfig {
 
 export interface GeneratedDocument {
   id: string;
-  type: string;
+  type: 'STANDALONE_IMAGE' | 'STANDALONE_PDF' | 'GROUP_PDF';
   sourceImageId?: string;
   sourceGroupId?: string;
   outputPath: string;
@@ -41,6 +41,16 @@ export interface GeneratedDocument {
   dryRun: boolean;
   message: string;
   createdAt: string;
+}
+
+export interface HistoryPage {
+  items: GeneratedDocument[];
+  page: number;
+  size: number;
+  totalElements: number;
+  totalPages: number;
+  hasNext: boolean;
+  hasPrevious: boolean;
 }
 
 export interface ProcessResult {
