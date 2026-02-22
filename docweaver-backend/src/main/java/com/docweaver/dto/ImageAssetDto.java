@@ -13,6 +13,7 @@ public record ImageAssetDto(
         String originalPath,
         Long fileSize,
         ImageMode mode,
+        Integer rotationDegrees,
         OffsetDateTime uploadedAt
 ) {
 }

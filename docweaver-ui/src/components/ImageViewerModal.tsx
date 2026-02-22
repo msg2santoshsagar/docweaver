@@ -9,9 +9,15 @@ type ImageViewerModalProps = {
   onClose: () => void;
   onDelete: (id: string) => void | Promise<void>;
   onRename: (id: string, displayName: string) => void | Promise<void>;
+  onRotate: (id: string, rotationDegrees: number) => void | Promise<void>;
 };
 
-export function ImageViewerModal({ image, isOpen, onClose, onDelete, onRename }: ImageViewerModalProps) {
+const normalizeRotation = (rotationDegrees: number) => {
+  const normalized = rotationDegrees % 360;
+  return normalized < 0 ? normalized + 360 : normalized;
+};
+
+export function ImageViewerModal({ image, isOpen, onClose, onDelete, onRename, onRotate }: ImageViewerModalProps) {
   const [zoom, setZoom] = useState(1);
   const [rotate, setRotate] = useState(0);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -22,7 +28,7 @@ export function ImageViewerModal({ image, isOpen, onClose, onDelete, onRename }:
   useEffect(() => {
     if (!image) return;
     setZoom(1);
-    setRotate(0);
+    setRotate(normalizeRotation(image.rotationDegrees ?? 0));
     setPan({ x: 0, y: 0 });
     setPanning(false);
     setNameDraft(image.displayName);
@@ -51,6 +57,19 @@ export function ImageViewerModal({ image, isOpen, onClose, onDelete, onRename }:
     }
   };
 
+  const rotateAndPersist = async (deltaDegrees: number) => {
+    if (!image) return;
+    const next = normalizeRotation(rotate + deltaDegrees);
+    setRotate(next);
+    await onRotate(image.id, next);
+  };
+
+  const resetOrientation = async () => {
+    if (!image) return;
+    setRotate(0);
+    await onRotate(image.id, 0);
+  };
+
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Image Viewer">
       <div className="space-y-3">
@@ -70,18 +89,18 @@ export function ImageViewerModal({ image, isOpen, onClose, onDelete, onRename }:
           <IconButton title="Zoom out" onClick={() => setZoom((z) => Math.max(0.25, z - 0.1))}><MinusIcon /></IconButton>
           <span className="text-xs text-muted">{Math.round(zoom * 100)}%</span>
           <IconButton title="Zoom in" onClick={() => setZoom((z) => Math.min(3, z + 0.1))}><PlusIcon /></IconButton>
-          <IconButton title="Rotate left" onClick={() => setRotate((r) => r - 90)}><RotateLeftIcon /></IconButton>
-          <IconButton title="Rotate right" onClick={() => setRotate((r) => r + 90)}><RotateRightIcon /></IconButton>
+          <IconButton title="Rotate left" onClick={() => void rotateAndPersist(-90)}><RotateLeftIcon /></IconButton>
+          <IconButton title="Rotate right" onClick={() => void rotateAndPersist(90)}><RotateRightIcon /></IconButton>
           <div className="ml-auto" />
           <IconButton
             title="Reset view and name"
-            onClick={() => {
+            onClick={() => void (async () => {
               setZoom(1);
-              setRotate(0);
               setPan({ x: 0, y: 0 });
               setPanning(false);
               setNameDraft(image.displayName);
-            }}
+              await resetOrientation();
+            })()}
           >
             <ResetViewIcon />
           </IconButton>

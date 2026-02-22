@@ -9,6 +9,7 @@ export interface ImageAsset {
   originalPath: string;
   fileSize: number;
   mode: ImageMode;
+  rotationDegrees: number;
   uploadedAt: string;
 }
 

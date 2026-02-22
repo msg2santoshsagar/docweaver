@@ -141,7 +141,7 @@ public class DocumentGroupService {
             row.setDocumentGroup(group);
             row.setImageAsset(image);
             row.setSortOrder(i);
-            row.setRotationDegrees(existingRotation.getOrDefault(image.getId(), 0));
+            row.setRotationDegrees(existingRotation.getOrDefault(image.getId(), normalizeRotation(image.getRotationDegrees())));
             rows.add(row);
         }
         documentImageRepository.saveAll(rows);

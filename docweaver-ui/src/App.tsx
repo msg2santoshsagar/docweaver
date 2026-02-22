@@ -36,6 +36,8 @@ const chunk = <T,>(items: T[], size: number): T[][] => {
   return out;
 };
 
+const wait = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+
 const fileToBase64 = (file: File) =>
   new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -84,6 +86,7 @@ export default function App() {
 
   const [saving, setSaving] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [bootstrapped, setBootstrapped] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
 
@@ -203,24 +206,63 @@ export default function App() {
   const loadAll = async () => {
     setError('');
     try {
-      const [imageRows, groupRows, historyRows, configRow] = await Promise.all([
-        api.listImages(),
-        api.listGroups(),
-        api.listHistory(),
-        api.readConfig()
-      ]);
-      setImages(imageRows);
-      setGroups(groupRows);
-      setHistory(historyRows);
+      let configRow: AppConfig | null = null;
+      let configError: Error | null = null;
+      for (let attempt = 0; attempt < 8; attempt += 1) {
+        try {
+          configRow = await api.readConfig();
+          configError = null;
+          break;
+        } catch (e) {
+          configError = e as Error;
+          if (attempt < 7) {
+            await wait(500);
+          }
+        }
+      }
+      if (!configRow) {
+        throw (configError ?? new Error('Failed to load configuration.'));
+      }
       setConfig(configRow);
       setDeleteOriginals(configRow.defaultDeleteOriginals);
+
+      const [imageRows, groupRows, historyRows] = await Promise.allSettled([
+        api.listImages(),
+        api.listGroups(),
+        api.listHistory()
+      ]);
+
+      if (imageRows.status === 'fulfilled') {
+        setImages(imageRows.value);
+      } else {
+        setError((imageRows.reason as Error)?.message ?? 'Failed to load images.');
+      }
+
+      if (groupRows.status === 'fulfilled') {
+        setGroups(groupRows.value);
+      } else {
+        setError((groupRows.reason as Error)?.message ?? 'Failed to load groups.');
+      }
+
+      if (historyRows.status === 'fulfilled') {
+        setHistory(historyRows.value);
+      } else {
+        setError((historyRows.reason as Error)?.message ?? 'Failed to load history.');
+      }
     } catch (e) {
+      setConfig(null);
       setError((e as Error).message);
     }
   };
 
+  const initializeApp = async () => {
+    setBootstrapped(false);
+    await loadAll();
+    setBootstrapped(true);
+  };
+
   useEffect(() => {
-    void loadAll();
+    void initializeApp();
   }, []);
 
   const resetGroupEditor = () => {
@@ -300,6 +342,15 @@ export default function App() {
     try {
       await api.renameImage(imageId, displayName);
       setImages((prev) => prev.map((img) => (img.id === imageId ? { ...img, displayName } : img)));
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+
+  const handleImageRotation = async (imageId: string, rotationDegrees: number) => {
+    try {
+      const updated = await api.updateImageRotation(imageId, rotationDegrees);
+      setImages((prev) => prev.map((img) => (img.id === updated.id ? updated : img)));
     } catch (e) {
       setError((e as Error).message);
     }
@@ -439,15 +490,29 @@ export default function App() {
     }
   };
 
+  const persistGroupRotation = async (targetGroupId: string, imageId: string, rotationDegrees: number) => {
+    try {
+      const updated = await api.updateGroupImageRotation(targetGroupId, imageId, rotationDegrees);
+      setGroups((prev) => prev.map((g) => (g.id === updated.id ? updated : g)));
+      if (groupEditorId === updated.id) {
+        const syncedRotation = normalizeRotation(updated.rotationByImageId?.[imageId] ?? rotationDegrees);
+        setDraftPageRotations((prev) => ({ ...prev, [imageId]: syncedRotation }));
+      }
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+
   const rotatePdfPage = async (deltaDegrees: number) => {
     const page = selectedPdfImage;
     if (!pdfModalSource || !page) return;
 
     if (pdfModalSource.kind === 'draft') {
-      setDraftPageRotations((prev) => ({
-        ...prev,
-        [page.id]: normalizeRotation((prev[page.id] ?? 0) + deltaDegrees)
-      }));
+      const next = normalizeRotation((draftPageRotations[page.id] ?? 0) + deltaDegrees);
+      setDraftPageRotations((prev) => ({ ...prev, [page.id]: next }));
+      if (groupEditorId) {
+        await persistGroupRotation(groupEditorId, page.id, next);
+      }
       return;
     }
 
@@ -455,12 +520,7 @@ export default function App() {
     if (!group) return;
     const current = group.rotationByImageId?.[page.id] ?? 0;
     const next = normalizeRotation(current + deltaDegrees);
-    try {
-      const updated = await api.updateGroupImageRotation(group.id, page.id, next);
-      setGroups((prev) => prev.map((g) => (g.id === updated.id ? updated : g)));
-    } catch (e) {
-      setError((e as Error).message);
-    }
+    await persistGroupRotation(group.id, page.id, next);
   };
 
   const removePdfPage = async () => {
@@ -702,7 +762,25 @@ export default function App() {
     }
   };
 
-  if (!config) return <div className="p-10 text-text">Loading...</div>;
+  if (!bootstrapped && !config) return <div className="p-10 text-text">Loading...</div>;
+
+  if (bootstrapped && !config) {
+    return (
+      <div className="mx-auto mt-20 max-w-lg rounded-2xl border border-danger/40 bg-panel p-8 text-text shadow-card">
+        <h2 className="text-xl font-semibold">Unable to load DocWeaver</h2>
+        <p className="mt-2 text-sm text-muted">
+          Could not load application configuration from the backend. Check Docker logs, then retry.
+        </p>
+        {error && <p className="mt-3 rounded bg-danger/10 px-3 py-2 text-sm text-danger">{error}</p>}
+        <button
+          className="mt-5 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-bg"
+          onClick={() => void initializeApp()}
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-7xl px-4 pb-12 pt-8 text-text sm:px-8">
@@ -1055,6 +1133,7 @@ export default function App() {
         onClose={() => setImageModalId('')}
         onDelete={(id) => void removeImage(id)}
         onRename={(id, displayName) => void handleRename(id, displayName)}
+        onRotate={(id, rotationDegrees) => void handleImageRotation(id, rotationDegrees)}
       />
 
       <Modal

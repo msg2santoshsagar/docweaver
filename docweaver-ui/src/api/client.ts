@@ -60,6 +60,11 @@ export const api = {
     headers: jsonHeaders,
     body: JSON.stringify({ mode })
   }),
+  updateImageRotation: (imageId: string, rotationDegrees: number) => request<ImageAsset>(`/api/images/${imageId}/rotation`, {
+    method: 'PATCH',
+    headers: jsonHeaders,
+    body: JSON.stringify({ rotationDegrees })
+  }),
   createGroup: (name: string, imageIds: string[]) => request<DocumentGroup>('/api/groups', {
     method: 'POST',
     headers: jsonHeaders,

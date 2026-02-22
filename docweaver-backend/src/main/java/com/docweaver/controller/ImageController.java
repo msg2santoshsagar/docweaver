@@ -2,6 +2,7 @@ package com.docweaver.controller;
 
 import com.docweaver.dto.ImageAssetDto;
 import com.docweaver.dto.RenameImageRequest;
+import com.docweaver.dto.UpdateImageRotationRequest;
 import com.docweaver.dto.UpdateImageModeRequest;
 import com.docweaver.dto.UploadResponse;
 import com.docweaver.entity.ImageAsset;
@@ -56,6 +57,11 @@ public class ImageController {
     @PatchMapping("/{imageId}/mode")
     public ImageAssetDto updateMode(@PathVariable UUID imageId, @Valid @org.springframework.web.bind.annotation.RequestBody UpdateImageModeRequest request) {
         return imageService.updateMode(imageId, request.mode());
+    }
+
+    @PatchMapping("/{imageId}/rotation")
+    public ImageAssetDto updateRotation(@PathVariable UUID imageId, @Valid @org.springframework.web.bind.annotation.RequestBody UpdateImageRotationRequest request) {
+        return imageService.updateRotation(imageId, request.rotationDegrees());
     }
 
     @GetMapping("/{imageId}/preview")

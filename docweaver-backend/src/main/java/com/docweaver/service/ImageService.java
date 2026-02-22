@@ -63,6 +63,7 @@ public class ImageService {
             image.setOriginalPath(target.toString());
             image.setFileSize(file.getSize());
             image.setMode(ImageMode.STANDALONE);
+            image.setRotationDegrees(0);
             image.setUploadedAt(OffsetDateTime.now());
             return toDto(imageAssetRepository.save(image));
         }).toList();
@@ -84,6 +85,13 @@ public class ImageService {
     public ImageAssetDto updateMode(UUID imageId, ImageMode mode) {
         ImageAsset image = getEntity(imageId);
         image.setMode(mode);
+        return toDto(imageAssetRepository.save(image));
+    }
+
+    @Transactional
+    public ImageAssetDto updateRotation(UUID imageId, Integer rotationDegrees) {
+        ImageAsset image = getEntity(imageId);
+        image.setRotationDegrees(normalizeRotation(rotationDegrees));
         return toDto(imageAssetRepository.save(image));
     }
 
@@ -114,5 +122,16 @@ public class ImageService {
 
     public ImageAssetDto toDto(ImageAsset image) {
         return imageAssetMapper.toDto(image);
+    }
+
+    private int normalizeRotation(Integer rotationDegrees) {
+        if (rotationDegrees == null) {
+            return 0;
+        }
+        int normalized = rotationDegrees % 360;
+        if (normalized < 0) {
+            normalized += 360;
+        }
+        return normalized;
     }
 }

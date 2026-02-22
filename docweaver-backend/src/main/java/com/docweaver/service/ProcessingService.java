@@ -17,6 +17,7 @@ import com.docweaver.repository.DocumentImageRepository;
 import com.docweaver.repository.GeneratedDocumentRepository;
 import com.docweaver.repository.ImageAssetRepository;
 import com.docweaver.util.FilenameUtil;
+import com.docweaver.util.ImageTransformUtil;
 import com.docweaver.util.PdfUtil;
 import com.docweaver.util.StorageUtil;
 import lombok.RequiredArgsConstructor;
@@ -44,6 +45,7 @@ public class ProcessingService {
     private final DocumentGroupRepository documentGroupRepository;
     private final StorageUtil storageUtil;
     private final PdfUtil pdfUtil;
+    private final ImageTransformUtil imageTransformUtil;
 
     @Transactional
     public ProcessResponse process(ProcessRequest request) {
@@ -116,6 +118,7 @@ public class ProcessingService {
         OutputType outputType = item.outputType() == null
                 ? appConfigService.getOrCreate().getDefaultStandaloneOutputType()
                 : item.outputType();
+        int standaloneRotation = normalizeRotation(image.getRotationDegrees());
 
         String extension = outputType == OutputType.PDF
                 ? "pdf"
@@ -129,9 +132,21 @@ public class ProcessingService {
         try {
             if (!dryRun) {
                 if (outputType == OutputType.PDF) {
-                    pdfUtil.createSingleImagePdf(Path.of(image.getOriginalPath()), target);
+                    pdfUtil.createMultiImagePdf(
+                            List.of(new PdfUtil.PageInput(Path.of(image.getOriginalPath()), standaloneRotation)),
+                            target
+                    );
                 } else {
-                    Files.copy(Path.of(image.getOriginalPath()), target);
+                    if (standaloneRotation == 0) {
+                        Files.copy(Path.of(image.getOriginalPath()), target);
+                    } else {
+                        byte[] rotated = imageTransformUtil.readRotatedImage(
+                                Path.of(image.getOriginalPath()),
+                                standaloneRotation,
+                                extension
+                        );
+                        Files.write(target, rotated);
+                    }
                 }
             }
 
@@ -292,6 +307,17 @@ public class ProcessingService {
             return;
         }
         imageAssetRepository.delete(image);
+    }
+
+    private int normalizeRotation(Integer rotationDegrees) {
+        if (rotationDegrees == null) {
+            return 0;
+        }
+        int normalized = rotationDegrees % 360;
+        if (normalized < 0) {
+            normalized += 360;
+        }
+        return normalized;
     }
 
     private record ResultWithOriginal(ProcessResultItemDto result, Path originalPath, List<Path> groupOriginals) {

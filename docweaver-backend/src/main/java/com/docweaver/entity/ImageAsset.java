@@ -37,6 +37,9 @@ public class ImageAsset {
     @Column(nullable = false)
     private ImageMode mode;
 
+    @Column(nullable = false, columnDefinition = "integer default 0")
+    private Integer rotationDegrees = 0;
+
     @Column(nullable = false)
     private OffsetDateTime uploadedAt;
 
@@ -104,6 +107,14 @@ public class ImageAsset {
 
     public void setMode(ImageMode mode) {
         this.mode = mode;
+    }
+
+    public Integer getRotationDegrees() {
+        return rotationDegrees;
+    }
+
+    public void setRotationDegrees(Integer rotationDegrees) {
+        this.rotationDegrees = rotationDegrees;
     }
 
     public OffsetDateTime getUploadedAt() {
